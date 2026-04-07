@@ -1,5 +1,6 @@
 {
   "name": "my-app",
+  "description": "Example Next.js app showing how to use http-client-fetch in server and client components.",
   "version": "0.1.0",
   "private": true,
   "scripts": {

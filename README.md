@@ -1,36 +1,140 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js http-client-fetch Proposal
 
-## Getting Started
+This repository demonstrates how to use `http-client-fetch` in both server-side and client-side code in a Next.js App Router application.
 
-First, run the development server:
+The proposal is simple: create one shared HTTP client instance, reuse it in Server Components and Client Components, and keep the rendering model explicit in the UI and documentation.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What this repo shows
+
+- A shared `http-client-fetch` client configured once in `app/libs/api.ts`
+- A Server Component that awaits data during server rendering
+- A Client Component that fetches data in the browser after hydration
+- A single page that compares both approaches side by side
+
+## Why this approach
+
+Using one HTTP client instance gives you a consistent place to manage:
+
+- `baseURL`
+- shared headers
+- interceptors or auth logic
+- request behavior reused across server and client execution
+
+This works well for Next.js when you want the same API wrapper available in different rendering environments.
+
+## Implementation overview
+
+### Shared HTTP client
+
+The shared client is defined in `app/libs/api.ts`:
+
+```ts
+import httpClient from 'http-client-fetch';
+
+export const api = httpClient.create({
+  baseURL: 'https://jsonplaceholder.typicode.com',
+  headers: {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  },
+});
+
+api.interceptors.request.use((config) => {
+  return {
+    ...config,
+    headers: {
+      ...config.headers,
+      'X-Demo-Client': 'next-example',
+    },
+  };
+});
+
+api.interceptors.response.use((response) => response);
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The interceptor block is included on purpose so the example also shows where to add shared auth headers, request tracing, logging, or response normalization.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Server-side usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+In Next.js App Router, components are Server Components by default. That means you can call the shared HTTP client directly in an async component:
 
-## Learn More
+```tsx
+import { api } from '../libs/api';
 
-To learn more about Next.js, take a look at the following resources:
+export default async function FetchServerSide() {
+  const users = await api.get('/users');
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+  return <pre>{JSON.stringify(users.data, null, 2)}</pre>;
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Use this pattern when:
 
-## Deploy on Vercel
+- data should be fetched on the server
+- SEO or first-render content matters
+- you want to avoid browser-side loading for the initial render
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Client-side usage
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For interactive browser-side behavior, use a Client Component with `'use client'` and fetch inside an effect:
+
+```tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '../libs/api';
+
+export default function FetchClientSide() {
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    async function loadUsers() {
+      const response = await api.get('/users');
+      setUsers(response.data);
+    }
+
+    loadUsers();
+  }, []);
+
+  return <pre>{JSON.stringify(users, null, 2)}</pre>;
+}
+```
+
+Use this pattern when:
+
+- the request depends on browser interaction
+- the component uses state or effects
+- the request should happen after hydration
+
+## Important Next.js note
+
+This example follows the current App Router model:
+
+- Server Components are the default in `app/`
+- `'use client'` creates the client boundary
+- `'use server'` is for Server Functions and server actions, not for marking ordinary Server Components
+
+## Run the example
+
+```bash
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000`.
+
+## Project structure
+
+```text
+app/
+	components/
+		fetch-client-side.tsx
+		fetch-server-side.tsx
+	libs/
+		api.ts
+	page.tsx
+```
+
+## Summary description
+
+This project is a small reference implementation for teams that want to document or propose `http-client-fetch` as a shared API layer in Next.js. It shows the same client working in both Server Components and Client Components with minimal setup and clear separation of rendering behavior.
